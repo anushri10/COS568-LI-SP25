@@ -30,7 +30,7 @@ int main(int argc, char* argv[]) {
       ("errors",     "Track bounds/errors",    cxxopts::value<bool>()->default_value("false"))
       ("csv",        "Output CSV",             cxxopts::value<bool>()->default_value("false"))
       ("threads",    "Number of threads",      cxxopts::value<size_t>()->default_value("1"))
-      ("repeats,r",  "Repeats per experiment", cxxopts::value<size_t>()->default_value("1"))
+      ("r,repeats",  "Repeats per experiment", cxxopts::value<size_t>()->default_value("1"))
       ("verify",     "Verify correctness",     cxxopts::value<bool>()->default_value("false"))
       ("value",      "Index hyperparameter (PGM error or Hybrid flush threshold)",
                      cxxopts::value<int>()->default_value("0"))
