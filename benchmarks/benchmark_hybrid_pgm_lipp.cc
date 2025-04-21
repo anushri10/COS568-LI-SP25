@@ -1,6 +1,6 @@
-#include "benchmark_hybrid_pgm_lipp.h"
+#include "benchmarks/benchmark_hybrid_pgm_lipp.h"
 #include "common.h"              // INSTANTIATE_TEMPLATES 
-#include "hybrid_pgm_lipp.h"     // our new competitor
+#include "competitors/hybrid_pgm_lipp.h"     // our new competitor
 
 template <typename Searcher>
 void benchmark_64_hybrid_pgm_lipp(
