@@ -1,21 +1,23 @@
-#include "benchmark_hybrid_pgm_lipp.h"
-#include "../competitors/hybrid_pgm_lipp.h"
+// benchmarks/benchmark_hybrid_pgm_lipp.cc
 
-using namespace tli;
+#include "benchmarks/benchmark_hybrid_pgm_lipp.h"
+#include "benchmark.h"
+#include "benchmarks/common.h"
+#include "competitors/hybrid_pgm_lipp.h"
 
 //-----------------------------------------------------------------------------
-// 1) Build‑time registration: (we ignore params, just call Run once)
+// Build‑time registration: same style as PGM and DynamicPGM
 //-----------------------------------------------------------------------------
 template <typename Searcher>
 void benchmark_64_hybrid_pgm_lipp(
     tli::Benchmark<uint64_t>& benchmark,
     bool pareto,
-    const std::vector<int>& /*params*/)
+    const std::vector<int>& /* params */)
 {
   if (!pareto) {
-    util::fail("HybridPGM's hyperparameter cannot be set in this mode");
+    util::fail("HybridPGM's hyperparameter cannot be set");
   } else {
-    // single instantiation; any flush-threshold is picked up via the CLI flag
+    // flush-threshold is picked up via the --flush-threshold CLI flag
     benchmark.template Run<
       HybridPGMLippAsync<uint64_t, Searcher, /*pgm_error=*/16>
     >();
@@ -23,20 +25,19 @@ void benchmark_64_hybrid_pgm_lipp(
 }
 
 //-----------------------------------------------------------------------------
-// 2) File‑based runner: fixed Searcher = LinearSearch<record>, pgm_error = 16
+// File‑based runner: exactly like DynamicPGM’s version
 //-----------------------------------------------------------------------------
 template <int record>
 void benchmark_64_hybrid_pgm_lipp(
     tli::Benchmark<uint64_t>& benchmark,
-    const std::string& filename)
+    const std::string& /*filename*/)
 {
-  benchmark.template RunFromFile<
+  benchmark.template Run<
     HybridPGMLippAsync<uint64_t, LinearSearch<record>, /*pgm_error=*/16>
-  >(filename);
+  >();
 }
 
 //-----------------------------------------------------------------------------
-// 3) Macro to instantiate all the Searcher<> combinations (multithreaded mode)
-//    Matches how your other benchmark_*.cc files do it.
+// Instantiate for all your search‐strategies & error settings
 //-----------------------------------------------------------------------------
 INSTANTIATE_TEMPLATES_MULTITHREAD(benchmark_64_hybrid_pgm_lipp, uint64_t);
