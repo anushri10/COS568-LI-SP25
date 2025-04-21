@@ -41,7 +41,7 @@ public:
 
   // Build both indices on the initial data
   uint64_t Build(const std::vector<KeyValue<KeyType>>& data,
-                 size_t num_threads) override
+                 size_t num_threads) 
   {
     uint64_t t1 = dynamic_pgm_.Build(data, num_threads);
     uint64_t t2 = lipp_.Build(data, num_threads);
@@ -50,7 +50,7 @@ public:
 
   // Lookup in DPGM, then fall back to LIPP
   size_t EqualityLookup(const KeyType& key,
-                        uint32_t thread_id) const override
+                        uint32_t thread_id) 
   {
     auto r = dynamic_pgm_.EqualityLookup(key, thread_id);
     if (r != util::OVERFLOW) return r;
@@ -59,7 +59,7 @@ public:
 
   // Insert into DPGM, buffer for async flush into LIPP
   void Insert(const KeyValue<KeyType>& kv,
-              uint32_t thread_id) override
+              uint32_t thread_id) 
   {
     dynamic_pgm_.Insert(kv, thread_id);
     {
@@ -73,14 +73,14 @@ public:
   }
 
   // Combined footprint
-  std::size_t size() const override {
+  std::size_t size()  {
     return dynamic_pgm_.size() + lipp_.size();
   }
 
-  std::string name() const override { return "HybridPGM"; }
+  std::string name()  { return "HybridPGM"; }
   bool applicable(bool unique, bool range_query,
                   bool insert, bool multithread,
-                  const std::string& ops_filename) const override
+                  const std::string& ops_filename) 
   {
     return !multithread;
   }
