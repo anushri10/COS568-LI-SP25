@@ -1,7 +1,5 @@
 #pragma once
 #include "benchmark.h"
-#include <vector>
-#include <string>
 
 template <typename Searcher>
 void benchmark_64_hybrid_pgm_lipp(
