@@ -50,28 +50,28 @@ do
       ./data/${DATA}_ops_2M_0.000000rq_0.500000nl_0.000000i \
       --through --csv \
       --only HybridPGM \
-      --flush-threshold $TH -r 3
+      --value $TH -r 3
 
     # insert+lookup (50/50)
     $BENCHMARK ./data/$DATA \
       ./data/${DATA}_ops_2M_0.000000rq_0.500000nl_0.500000i_0m \
       --through --csv \
       --only HybridPGM \
-      --flush-threshold $TH -r 3
+      --value $TH -r 3
 
     # mixed 90% lookup (i=0.1)
     $BENCHMARK ./data/$DATA \
       ./data/${DATA}_ops_2M_0.000000rq_0.500000nl_0.100000i_0m_mix \
       --through --csv \
       --only HybridPGM \
-      --flush-threshold $TH -r 3
+      --value $TH -r 3
 
     # mixed 10% lookup (i=0.9)
     $BENCHMARK ./data/$DATA \
       ./data/${DATA}_ops_2M_0.000000rq_0.500000nl_0.900000i_0m_mix \
       --through --csv \
       --only HybridPGM \
-      --flush-threshold $TH -r 3
+      --value $TH -r 3
   done
 done
 
