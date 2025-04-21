@@ -76,7 +76,7 @@ public:
 
   std::string name() const { return "HybridPGM"; }
   std::size_t size() const {
-    return dynamic_pgm_.size() + lipp_.index_size();
+    return dynamic_pgm_.size() + lipp_.size();
   }
   bool applicable(bool unique, bool range_query, bool insert,
                   bool multithread, const std::string&) const
