@@ -1,8 +1,11 @@
 #include "benchmark.h"
-#include "benchmark_btree.h"
-#include "benchmark_dynamic_pgm.h"
-#include "benchmark_lipp.h"
-#include "benchmark_hybrid_pgm_lipp.h"
+
+// Point at the headers under benchmarks/
+#include "benchmarks/benchmark_btree.h"
+#include "benchmarks/benchmark_dynamic_pgm.h"
+#include "benchmarks/benchmark_lipp.h"
+#include "benchmarks/benchmark_pgm.h"
+#include "benchmarks/benchmark_hybrid_pgm_lipp.h"
 #include "common.h"
 
 #include "cxxopts.hpp"
@@ -15,22 +18,22 @@ int main(int argc, char* argv[]) {
       .show_positional_help();
 
     options.add_options()
-      ("h,help",       "Print help")
-      ("data",         "Dataset filename",       cxxopts::value<std::string>())
-      ("ops",          "Operations filename",    cxxopts::value<std::string>())
-      ("only",         "Which index to run (BTree, DynamicPGM, LIPP, HybridPGM)",
-                       cxxopts::value<std::string>()->default_value(""))
-      ("through",      "Throughput mode",        cxxopts::value<bool>()->default_value("false"))
-      ("build",        "Only build index",       cxxopts::value<bool>()->default_value("false"))
-      ("fence",        "Memory fence each op",   cxxopts::value<bool>()->default_value("false"))
-      ("cold_cache",   "Clear cache each op",    cxxopts::value<bool>()->default_value("false"))
-      ("errors",       "Track bounds/errors",    cxxopts::value<bool>()->default_value("false"))
-      ("csv",          "Output CSV",             cxxopts::value<bool>()->default_value("false"))
-      ("threads",      "Number of threads",      cxxopts::value<size_t>()->default_value("1"))
-      ("repeats,r",    "Repeats per experiment", cxxopts::value<size_t>()->default_value("1"))
-      ("verify",       "Verify correctness",     cxxopts::value<bool>()->default_value("false"))
-      ("value",        "Index hyperparameter (e.g. flush‑threshold)",
-                       cxxopts::value<int>()->default_value("0"))
+      ("h,help",     "Print help")
+      ("data",       "Dataset filename",       cxxopts::value<std::string>())
+      ("ops",        "Operations filename",    cxxopts::value<std::string>())
+      ("only",       "Which index to run (BTree, DynamicPGM, PGM, LIPP, HybridPGM)",
+                     cxxopts::value<std::string>()->default_value(""))
+      ("through",    "Throughput mode",        cxxopts::value<bool>()->default_value("false"))
+      ("build",      "Only build index",       cxxopts::value<bool>()->default_value("false"))
+      ("fence",      "Memory fence each op",   cxxopts::value<bool>()->default_value("false"))
+      ("cold_cache", "Clear cache each op",    cxxopts::value<bool>()->default_value("false"))
+      ("errors",     "Track bounds/errors",    cxxopts::value<bool>()->default_value("false"))
+      ("csv",        "Output CSV",             cxxopts::value<bool>()->default_value("false"))
+      ("threads",    "Number of threads",      cxxopts::value<size_t>()->default_value("1"))
+      ("repeats,r",  "Repeats per experiment", cxxopts::value<size_t>()->default_value("1"))
+      ("verify",     "Verify correctness",     cxxopts::value<bool>()->default_value("false"))
+      ("value",      "Index hyperparameter (PGM error or Hybrid flush threshold)",
+                     cxxopts::value<int>()->default_value("0"))
     ;
 
     options.parse_positional({"data","ops"});
@@ -84,15 +87,17 @@ int main(int argc, char* argv[]) {
 
     bool pareto = false;  // not used in most benchmarks
 
-    // Dispatch to the selected index (or all, if --only is empty)
+    // Dispatch to whichever index(es) the user requested
     if (only.empty() || only == "BTree") {
       benchmark_64_btree<BranchingBinarySearch<0>>(bench, pareto, params);
     }
     if (only.empty() || only == "DynamicPGM") {
       benchmark_64_dynamic_pgm<BranchingBinarySearch<0>>(bench, pareto, params);
     }
+    if (only.empty() || only == "PGM") {
+      benchmark_64_pgm<BranchingBinarySearch<0>>(bench, pareto, params);
+    }
     if (only.empty() || only == "LIPP") {
-      // LIPP has no hyperparameter or multiple searchers
       benchmark_64_lipp(bench);
     }
     if (only.empty() || only == "HybridPGM") {
