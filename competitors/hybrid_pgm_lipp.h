@@ -1,5 +1,4 @@
 #pragma once
-
 #include "base.h"                  // for Competitor<>
 #include "dynamic_pgm_index.h"     // for DynamicPGM<>
 #include "lipp.h"                  // for Lipp<>
@@ -31,7 +30,7 @@ public:
     worker_ = std::thread(&HybridPGMLippAsync::flush_worker, this);
   }
 
-  // <– Removed 'override' here
+  // Destructor (no override)
   ~HybridPGMLippAsync() {
     {
       std::lock_guard<std::mutex> lk(buffer_mutex_);
@@ -41,21 +40,23 @@ public:
     if (worker_.joinable()) worker_.join();
   }
 
+  // Build initial index (before workload)
   uint64_t Build(const std::vector<KeyValue<KeyType>>& data,
-                 size_t num_threads) override
+                 size_t num_threads)
   {
     uint64_t t1 = dynamic_pgm_.Build(data, num_threads);
     std::vector<std::pair<KeyType,uint64_t>> load;
     load.reserve(data.size());
     for (auto &kv : data) load.emplace_back(kv.key, kv.value);
-    uint64_t t2 = util::timing([&]{ 
-      lipp_.bulk_load(load.data(), load.size()); 
-    });
+    uint64_t t2 = util::timing(
+      [&]{ lipp_.bulk_load(load.data(), load.size()); }
+    );
     return t1 + t2;
   }
 
+  // Lookup
   size_t EqualityLookup(const KeyType& key,
-                        uint32_t thread_id) const override
+                        uint32_t thread_id) const
   {
     auto r = dynamic_pgm_.EqualityLookup(key, thread_id);
     if (r != util::OVERFLOW) return r;
@@ -64,8 +65,9 @@ public:
     return lipp_.find(key, v) ? v : util::OVERFLOW;
   }
 
+  // Insert
   void Insert(const KeyValue<KeyType>& kv,
-              uint32_t thread_id) override
+              uint32_t thread_id)
   {
     dynamic_pgm_.Insert(kv, thread_id);
     {
@@ -78,12 +80,14 @@ public:
     }
   }
 
-  std::string name() const override { return "HybridPGM"; }
-  std::size_t size() const override {
+  // Metadata
+  std::string name() const { return "HybridPGM"; }
+  std::size_t size() const {
     return dynamic_pgm_.size() + lipp_.index_size();
   }
-  bool applicable(bool unique, bool range_query, bool insert,
-                  bool multithread, const std::string& ops_filename) const override
+  bool applicable(bool unique, bool range_query,
+                  bool insert, bool multithread,
+                  const std::string& ops_filename) const
   {
     return !multithread;
   }
