@@ -1,8 +1,8 @@
 #pragma once
-#include "base.h"                  // for Competitor<>
-#include "dynamic_pgm_index.h"     // for DynamicPGM<>
-#include "lipp.h"                  // for Lipp<>
-#include "util.h"                  // for util::OVERFLOW
+#include "base.h"                  // Competitor<>
+#include "dynamic_pgm_index.h"     // DynamicPGM<>
+#include "lipp.h"                  // Lipp<>
+#include "util.h"                  // util::OVERFLOW, util::NOT_FOUND
 #include <thread>
 #include <mutex>
 #include <shared_mutex>
@@ -14,7 +14,7 @@
 template <class KeyType, class SearchClass, size_t pgm_error>
 class HybridPGMLippAsync : public Competitor<KeyType, SearchClass> {
 public:
-  // harness passes params; we take params[0] as flush_threshold
+  // Harness constructor: params[0] = flush threshold
   HybridPGMLippAsync(const std::vector<int>& params)
     : HybridPGMLippAsync(
         params.empty() ? static_cast<size_t>(100000)
@@ -22,7 +22,7 @@ public:
       )
   {}
 
-  // real constructor: spins up the flush thread
+  // Real constructor: starts background flush thread
   HybridPGMLippAsync(size_t flush_threshold)
     : flush_threshold_(flush_threshold),
       stop_flag_(false)
@@ -30,6 +30,7 @@ public:
     worker_ = std::thread(&HybridPGMLippAsync::flush_worker, this);
   }
 
+  // Join background thread
   ~HybridPGMLippAsync() {
     {
       std::lock_guard<std::mutex> lk(buffer_mutex_);
@@ -39,27 +40,28 @@ public:
     if (worker_.joinable()) worker_.join();
   }
 
-  // using inbuilt wrappers
+  // 1) Build initial data: DynamicPGM + LIPP via wrapper
   uint64_t Build(const std::vector<KeyValue<KeyType>>& data,
                  size_t num_threads)
   {
-    // 1) build the dynamic‐PGM
     uint64_t t1 = dynamic_pgm_.Build(data, num_threads);
-    // 2) build the LIPP wrapper (which itself bulk‑loads internally)
     uint64_t t2 = lipp_.Build(data, num_threads);
     return t1 + t2;
   }
 
+  // 2) Lookup: try DynamicPGM, then wrapper’s EqualityLookup
   size_t EqualityLookup(const KeyType& key,
                         uint32_t thread_id) const
   {
     auto r = dynamic_pgm_.EqualityLookup(key, thread_id);
     if (r != util::OVERFLOW) return r;
+
     std::shared_lock<std::shared_mutex> lk(lipp_mutex_);
-    uint64_t v;
-    return lipp_.find(key, v) ? v : util::OVERFLOW;
+    size_t r2 = lipp_.EqualityLookup(key, thread_id);
+    return (r2 == util::NOT_FOUND ? util::OVERFLOW : r2);
   }
 
+  // 3) Insert: immediate into DynamicPGM, buffered→async into LIPP
   void Insert(const KeyValue<KeyType>& kv,
               uint32_t thread_id)
   {
@@ -74,17 +76,20 @@ public:
     }
   }
 
+  // 4) Metadata
   std::string name() const { return "HybridPGM"; }
   std::size_t size() const {
     return dynamic_pgm_.size() + lipp_.size();
   }
-  bool applicable(bool unique, bool range_query, bool insert,
-                  bool multithread, const std::string&) const
+  bool applicable(bool unique, bool range_query,
+                  bool insert, bool multithread,
+                  const std::string&) const
   {
     return !multithread;
   }
 
 private:
+  // Background flush: drain flush_buffer_ → wrapper’s Insert
   void flush_worker() {
     std::vector<KeyValue<KeyType>> to_flush;
     while (true) {
@@ -96,22 +101,24 @@ private:
       }
       std::unique_lock<std::shared_mutex> lk2(lipp_mutex_);
       for (auto &kv : to_flush) {
-        // Use the wrapper’s Insert method (capital “I”)
         lipp_.Insert(kv, /*thread_id=*/0);
       }
       to_flush.clear();
     }
   }
 
-  // my method
+  // Components
   DynamicPGM<KeyType, SearchClass, pgm_error> dynamic_pgm_{{}};
   Lipp<KeyType>                               lipp_{{}};
 
+  // Buffering
   size_t                                     flush_threshold_;
   std::vector<KeyValue<KeyType>>             buffer_, flush_buffer_;
   std::mutex                                 buffer_mutex_;
   std::condition_variable                    cv_;
   std::atomic<bool>                          stop_flag_;
+
+  // Protects LIPP during reads/inserts
   mutable std::shared_mutex                  lipp_mutex_;
   std::thread                                worker_;
 };
