@@ -2,7 +2,7 @@
 #include "base.h"                  // for Competitor<>
 #include "dynamic_pgm_index.h"     // for DynamicPGM<>
 #include "lipp.h"                  // for Lipp<>
-#include "util.h"                  // for util::timing, util::OVERFLOW
+#include "util.h"                  // for util::OVERFLOW
 #include <thread>
 #include <mutex>
 #include <shared_mutex>
@@ -14,7 +14,7 @@
 template <class KeyType, class SearchClass, size_t pgm_error>
 class HybridPGMLippAsync : public Competitor<KeyType, SearchClass> {
 public:
-  // Harness constructor: params[0] = flush_threshold
+  // harness passes params; we take params[0] as flush_threshold
   HybridPGMLippAsync(const std::vector<int>& params)
     : HybridPGMLippAsync(
         params.empty() ? static_cast<size_t>(100000)
@@ -22,7 +22,7 @@ public:
       )
   {}
 
-  // Internal constructor
+  // real constructor: spins up the flush thread
   HybridPGMLippAsync(size_t flush_threshold)
     : flush_threshold_(flush_threshold),
       stop_flag_(false)
@@ -30,7 +30,6 @@ public:
     worker_ = std::thread(&HybridPGMLippAsync::flush_worker, this);
   }
 
-  // Destructor (no override)
   ~HybridPGMLippAsync() {
     {
       std::lock_guard<std::mutex> lk(buffer_mutex_);
@@ -40,21 +39,17 @@ public:
     if (worker_.joinable()) worker_.join();
   }
 
-  // Build initial index (before workload)
+  // using inbuilt wrappers
   uint64_t Build(const std::vector<KeyValue<KeyType>>& data,
                  size_t num_threads)
   {
+    // 1) build the dynamic‐PGM
     uint64_t t1 = dynamic_pgm_.Build(data, num_threads);
-    std::vector<std::pair<KeyType,uint64_t>> load;
-    load.reserve(data.size());
-    for (auto &kv : data) load.emplace_back(kv.key, kv.value);
-    uint64_t t2 = util::timing(
-      [&]{ lipp_.bulk_load(load.data(), load.size()); }
-    );
+    // 2) build the LIPP wrapper (which itself bulk‑loads internally)
+    uint64_t t2 = lipp_.Build(data, num_threads);
     return t1 + t2;
   }
 
-  // Lookup
   size_t EqualityLookup(const KeyType& key,
                         uint32_t thread_id) const
   {
@@ -65,7 +60,6 @@ public:
     return lipp_.find(key, v) ? v : util::OVERFLOW;
   }
 
-  // Insert
   void Insert(const KeyValue<KeyType>& kv,
               uint32_t thread_id)
   {
@@ -80,14 +74,12 @@ public:
     }
   }
 
-  // Metadata
   std::string name() const { return "HybridPGM"; }
   std::size_t size() const {
     return dynamic_pgm_.size() + lipp_.index_size();
   }
-  bool applicable(bool unique, bool range_query,
-                  bool insert, bool multithread,
-                  const std::string& ops_filename) const
+  bool applicable(bool unique, bool range_query, bool insert,
+                  bool multithread, const std::string&) const
   {
     return !multithread;
   }
@@ -108,14 +100,15 @@ private:
     }
   }
 
+  // my method
   DynamicPGM<KeyType, SearchClass, pgm_error> dynamic_pgm_{{}};
   Lipp<KeyType>                               lipp_{{}};
 
-  size_t                                  flush_threshold_;
-  std::vector<KeyValue<KeyType>>          buffer_, flush_buffer_;
-  std::mutex                              buffer_mutex_;
-  std::condition_variable                 cv_;
-  std::atomic<bool>                       stop_flag_;
-  mutable std::shared_mutex               lipp_mutex_;
-  std::thread                             worker_;
+  size_t                                     flush_threshold_;
+  std::vector<KeyValue<KeyType>>             buffer_, flush_buffer_;
+  std::mutex                                 buffer_mutex_;
+  std::condition_variable                    cv_;
+  std::atomic<bool>                          stop_flag_;
+  mutable std::shared_mutex                  lipp_mutex_;
+  std::thread                                worker_;
 };
