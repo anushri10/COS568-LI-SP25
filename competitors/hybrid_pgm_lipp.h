@@ -15,7 +15,7 @@
 template <class KeyType, class SearchClass, size_t pgm_error>
 class HybridPGMLippAsync : public Competitor<KeyType, SearchClass> {
 public:
-  // Called by the harness: read first element as flush_threshold
+  // Harness constructor: params[0] = flush_threshold
   HybridPGMLippAsync(const std::vector<int>& params)
     : HybridPGMLippAsync(
         params.empty() ? static_cast<size_t>(100000)
@@ -31,8 +31,9 @@ public:
     worker_ = std::thread(&HybridPGMLippAsync::flush_worker, this);
   }
 
-  ~HybridPGMLippAsync() override {
-    { 
+  // <– Removed 'override' here
+  ~HybridPGMLippAsync() {
+    {
       std::lock_guard<std::mutex> lk(buffer_mutex_);
       stop_flag_ = true;
     }
@@ -40,23 +41,19 @@ public:
     if (worker_.joinable()) worker_.join();
   }
 
-  // Build initial index (called once, before file-based workload)
   uint64_t Build(const std::vector<KeyValue<KeyType>>& data,
                  size_t num_threads) override
   {
-    // 1) DynamicPGM build
     uint64_t t1 = dynamic_pgm_.Build(data, num_threads);
-    // 2) Bulk-load to LIPP
     std::vector<std::pair<KeyType,uint64_t>> load;
     load.reserve(data.size());
     for (auto &kv : data) load.emplace_back(kv.key, kv.value);
-    uint64_t t2 = util::timing(
-      [&]{ lipp_.bulk_load(load.data(), load.size()); }
-    );
+    uint64_t t2 = util::timing([&]{ 
+      lipp_.bulk_load(load.data(), load.size()); 
+    });
     return t1 + t2;
   }
 
-  // Lookup
   size_t EqualityLookup(const KeyType& key,
                         uint32_t thread_id) const override
   {
@@ -67,7 +64,6 @@ public:
     return lipp_.find(key, v) ? v : util::OVERFLOW;
   }
 
-  // Insert
   void Insert(const KeyValue<KeyType>& kv,
               uint32_t thread_id) override
   {
@@ -82,18 +78,13 @@ public:
     }
   }
 
-  // Metadata
   std::string name() const override { return "HybridPGM"; }
   std::size_t size() const override {
     return dynamic_pgm_.size() + lipp_.index_size();
   }
-  bool applicable(bool unique,
-                  bool range_query,
-                  bool insert,
-                  bool multithread,
-                  const std::string& ops_filename) const override
+  bool applicable(bool unique, bool range_query, bool insert,
+                  bool multithread, const std::string& ops_filename) const override
   {
-    // mirror DynamicPGM: no multithread
     return !multithread;
   }
 
