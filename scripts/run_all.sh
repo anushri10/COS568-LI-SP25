@@ -26,3 +26,5 @@ echo "Step 5: Running benchmarks..."
 
 echo "=== Benchmark completed successfully ==="
 echo "Check results in the 'results' directory."
+
+python3 analysis.py
