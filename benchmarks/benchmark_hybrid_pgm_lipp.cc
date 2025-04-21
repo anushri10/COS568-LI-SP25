@@ -1,22 +1,25 @@
-// benchmarks/benchmark_hybrid_pgm_lipp.cc
-
 #include "benchmark_hybrid_pgm_lipp.h"
 #include "../competitors/hybrid_pgm_lipp.h"
 
 using namespace tli;
 
 //-----------------------------------------------------------------------------
-// 1) Build‑time registration: sweep `--params` (used here for flush_threshold)
+// 1) Build‑time registration: (we ignore params, just call Run once)
 //-----------------------------------------------------------------------------
 template <typename Searcher>
 void benchmark_64_hybrid_pgm_lipp(
-    tli::Benchmark<uint64_t>& bench,
+    tli::Benchmark<uint64_t>& benchmark,
     bool pareto,
-    const std::vector<int>& params)
+    const std::vector<int>& /*params*/)
 {
-    bench.registerCompetitor<
-        HybridPGMLippAsync<uint64_t, Searcher, /* pgm_error = */ 16>
-    >("HybridPGM", params, pareto);
+  if (!pareto) {
+    util::fail("HybridPGM's hyperparameter cannot be set in this mode");
+  } else {
+    // single instantiation; any flush-threshold is picked up via the CLI flag
+    benchmark.template Run<
+      HybridPGMLippAsync<uint64_t, Searcher, /*pgm_error=*/16>
+    >();
+  }
 }
 
 //-----------------------------------------------------------------------------
@@ -24,16 +27,16 @@ void benchmark_64_hybrid_pgm_lipp(
 //-----------------------------------------------------------------------------
 template <int record>
 void benchmark_64_hybrid_pgm_lipp(
-    tli::Benchmark<uint64_t>& bench,
+    tli::Benchmark<uint64_t>& benchmark,
     const std::string& filename)
 {
-    bench.runFromFile<
-        HybridPGMLippAsync<uint64_t, LinearSearch<record>, /* pgm_error = */ 16>
-    >(filename);
+  benchmark.template RunFromFile<
+    HybridPGMLippAsync<uint64_t, LinearSearch<record>, /*pgm_error=*/16>
+  >(filename);
 }
 
 //-----------------------------------------------------------------------------
-// 3) Explicit instantiation for multithreaded benchmarks
-//    (uses the same macro as your other `benchmark_*.cc` files)
+// 3) Macro to instantiate all the Searcher<> combinations (multithreaded mode)
+//    Matches how your other benchmark_*.cc files do it.
 //-----------------------------------------------------------------------------
 INSTANTIATE_TEMPLATES_MULTITHREAD(benchmark_64_hybrid_pgm_lipp, uint64_t);
