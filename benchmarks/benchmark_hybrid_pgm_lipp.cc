@@ -17,13 +17,13 @@ void benchmark_64_hybrid_pgm_lipp(
 template <int record>
 void benchmark_64_hybrid_pgm_lipp(
     tli::Benchmark<uint64_t>& benchmark,
-    const std::string& filename)
+    const std::string&)
 {
   // use the default ctor which supplies a default flush_threshold
   std::vector<int> no_params;
   benchmark.template Run<
     HybridPGMLippAsync<uint64_t, BranchingBinarySearch<record>, 16>
-  >(filename);
+  >();
 }
 
 // instantiate for all the Searchers and the file‐based overload
