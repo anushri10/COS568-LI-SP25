@@ -6,9 +6,9 @@
 #include "benchmarks/benchmark_lipp.h"
 #include "benchmarks/benchmark_pgm.h"
 #include "benchmarks/benchmark_hybrid_pgm_lipp.h"
-#include "common.h"
+#include "benchmarks/common.h"
 
-#include "cxxopts.hpp"
+#include "utils/cxxopts.hpp"
 
 int main(int argc, char* argv[]) {
   try {
