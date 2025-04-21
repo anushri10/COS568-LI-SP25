@@ -30,7 +30,7 @@ public:
     worker_ = std::thread(&HybridPGMLippAsync::flush_worker, this);
   }
 
-  ~HybridPGMLippAsync() override {
+  ~HybridPGMLippAsync(){
     { 
       std::lock_guard<std::mutex> lk(buffer_mutex_);
       stop_flag_ = true;
