@@ -95,7 +95,10 @@ private:
         to_flush.swap(flush_buffer_);
       }
       std::unique_lock<std::shared_mutex> lk2(lipp_mutex_);
-      for (auto &kv : to_flush) lipp_.insert(kv.key, kv.value);
+      for (auto &kv : to_flush) {
+        // Use the wrapper’s Insert method (capital “I”)
+        lipp_.Insert(kv, /*thread_id=*/0);
+      }
       to_flush.clear();
     }
   }
