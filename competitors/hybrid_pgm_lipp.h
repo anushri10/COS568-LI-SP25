@@ -218,7 +218,7 @@ public:
     worker_ = std::thread(&HybridPGMLippAsync::flush_worker, this);
   }
 
-  ~HybridPGMLippAsync() override {
+  ~HybridPGMLippAsync()  {
     { std::lock_guard<std::mutex> lk(buffer_mtx_); stop_ = true; }
     cv_.notify_one();
     if (worker_.joinable()) worker_.join();
