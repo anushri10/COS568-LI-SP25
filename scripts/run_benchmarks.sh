@@ -35,11 +35,11 @@ mkdir -p ./results
 
 for DATA in fb_100M_public_uint64 books_100M_public_uint64 osmc_100M_public_uint64
 do
-  # 1) the three baselines
-  for INDEX in LIPP BTree DynamicPGM
-  do
-    execute_uint64_100M ${DATA} $INDEX
-  done
+  # # 1) the three baselines
+  # for INDEX in LIPP BTree DynamicPGM
+  # do
+  #   execute_uint64_100M ${DATA} $INDEX
+  # done
 
   # 2) hyper‑parameter sweep for HybridPGM
   for TH in "${FLUSH_THRESHOLDS[@]}"
