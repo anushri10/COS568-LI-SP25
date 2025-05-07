@@ -266,7 +266,7 @@ public:
 
   /* metadata for the harness */
   std::string name()  const { return "HybridPGM"; }
-  std::size_t size()  const { return dpgm_.size() + lipp_.index_size(); }
+  std::size_t size()  const { return dpgm_.size() + lipp_.size(); }
   bool applicable(bool, bool, bool, bool multithread,
                   const std::string&) const
   {
