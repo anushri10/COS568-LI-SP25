@@ -348,7 +348,8 @@ private:
   std::atomic<bool>              stop_{false};
 
   /* adaptive‑flush metrics */
-  std::atomic<uint64_t> lookup_lat_ns_{0}, lookup_cnt_{0}, insert_cnt_{0};
+  // std::atomic<uint64_t> lookup_lat_ns_{0}, lookup_cnt_{0}, insert_cnt_{0};
+  mutable std::atomic<uint64_t> lookup_lat_ns_{0}, lookup_cnt_{0}, insert_cnt_{0};
   double  avg_lookup_lat_ns_ = 0.0;
   double  avg_insert_mops_   = 0.0;
   size_t  flush_threshold_;           // live parameter
