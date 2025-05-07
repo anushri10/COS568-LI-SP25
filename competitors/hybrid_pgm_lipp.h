@@ -187,9 +187,11 @@
 
 
 #pragma once
+
 #include "dynamic_pgm_index.h"
 #include "lipp.h"
 #include "util.h"
+
 #include <thread>
 #include <mutex>
 #include <shared_mutex>
@@ -198,34 +200,27 @@
 #include <chrono>
 #include <vector>
 #include <cstdint>
-#include <algorithm>
 
-/*  ─────────────────────────────────────────────────────────────
-    HybridPGMLippAsync
-      * flushes inserts asynchronously from Dynamic‑PGM to LIPP
-      * adapts flush_threshold_ online using EWMA of
-            – average lookup latency   (ns)
-            – average insert rate      (ops/s)
-    ----------------------------------------------------------------*/
 template <class KeyType, class SearchClass, size_t pgm_error>
 class HybridPGMLippAsync : public Competitor<KeyType, SearchClass> {
-  /* === public API required by the harness ====================== */
 public:
-  /* ctor:  params[0] = starting_flush_threshold (optional)      */
-  explicit HybridPGMLippAsync(const std::vector<int>& params)
-      : flush_threshold_(params.empty() ? 100'000
-                                        : static_cast<size_t>(params[0])) {
+  // params[0] = initial flush threshold (optional)
+  explicit HybridPGMLippAsync(const std::vector<int>& params) {
+    flush_threshold_ = params.empty() ? 100000
+                                     : static_cast<size_t>(params[0]);
+    last_flush_tp_ = clock_now();
     worker_ = std::thread(&HybridPGMLippAsync::flush_worker, this);
   }
 
-  ~HybridPGMLippAsync()  {
+  ~HybridPGMLippAsync() {
     { std::lock_guard<std::mutex> lk(buffer_mtx_); stop_ = true; }
     cv_.notify_one();
     if (worker_.joinable()) worker_.join();
   }
 
+  // Build both indices on the initial data
   uint64_t Build(const std::vector<KeyValue<KeyType>>& data,
-                 size_t num_threads) override {
+                 size_t num_threads) {
     uint64_t t1 = dpgm_.Build(data, num_threads);
     uint64_t t2 = util::timing([&] {
       std::vector<std::pair<KeyType,uint64_t>> load;
@@ -236,62 +231,64 @@ public:
     return t1 + t2;
   }
 
-  /* lookup – measure latency for the adaptive heuristic */
-  size_t EqualityLookup(const KeyType& key,
-                        uint32_t tid) const override {
+  // Lookup through DPGM, then fall back to LIPP
+  size_t EqualityLookup(const KeyType& key, uint32_t tid) const {
     auto t0 = clock_now();
     size_t res = dpgm_.EqualityLookup(key, tid);
     if (res == util::OVERFLOW) {
       std::shared_lock<std::shared_mutex> lk(lipp_mtx_);
-      uint64_t v;  res = lipp_.find(key, v) ? v : util::OVERFLOW;
+      uint64_t v;
+      res = lipp_.find(key, v) ? v : util::OVERFLOW;
     }
     auto ns = since_ns(t0);
     lookup_lat_ns_.fetch_add(ns, std::memory_order_relaxed);
-    lookup_cnt_.fetch_add(1,   std::memory_order_relaxed);
+    lookup_cnt_.fetch_add(1, std::memory_order_relaxed);
     return res;
   }
 
-  /* insert – goes to DPGM + staging buffer  */
-  void Insert(const KeyValue<KeyType>& kv,
-              uint32_t /*tid*/) override {
-    dpgm_.Insert(kv, 0);                         // fast path
+  // Insert into DPGM + staging buffer for asynchronous flush
+  void Insert(const KeyValue<KeyType>& kv, uint32_t /*tid*/) {
+    dpgm_.Insert(kv, 0);
     insert_cnt_.fetch_add(1, std::memory_order_relaxed);
 
-    std::lock_guard<std::mutex> lk(buffer_mtx_);
-    buffer_.emplace_back(kv);
-    if (buffer_.size() >= flush_threshold_)
+    {
+      std::lock_guard<std::mutex> lk(buffer_mtx_);
+      buffer_.push_back(kv);
+    }
+    if (buffer_.size() >= flush_threshold_) {
       cv_.notify_one();
+    }
   }
 
-  /* meta‑data hooks for the harness */
-  std::string  name() const override { return "HybridPGM"; }
-  std::size_t  size() const override {
+  // Metadata
+  std::string name() const { return "HybridPGM"; }
+  std::size_t size() const {
     return dpgm_.size() + lipp_.index_size();
   }
   bool applicable(bool, bool, bool, bool multithread,
-                  const std::string&) const override {
-    return !multithread;          // single‑thread bench only
+                  const std::string&) const {
+    return !multithread;
   }
 
-  /* === private implementation ================================== */
 private:
-  /* time helpers */
+  // Clock helpers
   using clk = std::chrono::steady_clock;
-  static inline clk::time_point clock_now() { return clk::now(); }
-  static inline uint64_t since_ns(clk::time_point t0) {
+  static inline clk::time_point clock_now() {
+    return clk::now();
+  }
+  static inline uint64_t since_ns(const clk::time_point& t0) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
-             clk::now() - t0).count();
+      clk::now() - t0).count();
   }
 
-  /* background flush thread – also updates adaptive threshold */
+  // Background flush + adaptive threshold thread
   void flush_worker() {
     std::vector<KeyValue<KeyType>> local;
-    constexpr double alpha = 0.1;                 // EWMA weight
-    const uint64_t target_lookup_ns = 800;        // 0.8 µs
-    const double   target_insert_mops = 2.0;      // 2 Mops/s
+    constexpr double alpha = 0.1;
+    const uint64_t target_lookup_ns = 800;   // 0.8µs
+    const double   target_insert_mops = 2.0; // 2 Mops/s
 
     while (true) {
-      /* wait for work */
       {
         std::unique_lock<std::mutex> lk(buffer_mtx_);
         cv_.wait_for(lk, std::chrono::milliseconds(10),
@@ -300,46 +297,46 @@ private:
         buffer_.swap(local);
       }
 
-      /* flush into LIPP */
-      { std::unique_lock<std::shared_mutex> lk(lipp_mtx_);
+      // Flush into LIPP
+      {
+        std::unique_lock<std::shared_mutex> lk(lipp_mtx_);
         for (auto &kv: local) lipp_.insert(kv.key, kv.value);
       }
       local.clear();
 
-      /* --- adaptive threshold update every flush --------------- */
-      uint64_t lkp_cnt  = lookup_cnt_.exchange(0);
-      uint64_t lkp_lat  = lookup_lat_ns_.exchange(0);
-      uint64_t ins_cnt  = insert_cnt_.exchange(0);
+      // Compute instantaneous rates / latencies
+      uint64_t lkp_cnt = lookup_cnt_.exchange(0);
+      uint64_t lkp_lat = lookup_lat_ns_.exchange(0);
+      uint64_t ins_cnt = insert_cnt_.exchange(0);
 
-      double   now_lat_ns = (lkp_cnt ? double(lkp_lat)/lkp_cnt : 0);
-      double   now_ins_mops =                           // inserts / second
-        (ins_cnt / 1e6) / flush_interval_sec();
+      double now_lat_ns  = lkp_cnt ? double(lkp_lat)/lkp_cnt : 0;
+      double now_ins_mops =
+        (ins_cnt/1e6) / flush_interval_sec();
 
-      avg_lookup_lat_ns_ = alpha*now_lat_ns +
-                           (1-alpha)*avg_lookup_lat_ns_;
-      avg_insert_mops_   = alpha*now_ins_mops +
-                           (1-alpha)*avg_insert_mops_;
+      // Update EWMAs
+      avg_lookup_lat_ns_ = alpha*now_lat_ns  + (1-alpha)*avg_lookup_lat_ns_;
+      avg_insert_mops_   = alpha*now_ins_mops + (1-alpha)*avg_insert_mops_;
 
-      /* react */
+      // Adjust threshold
       if (avg_lookup_lat_ns_ > target_lookup_ns && flush_threshold_ > 10'000)
         flush_threshold_ /= 2;
-      else if (avg_insert_mops_ > target_insert_mops &&
-               flush_threshold_ < 2'000'000)
+      else if (avg_insert_mops_ > target_insert_mops && flush_threshold_ < 2'000'000)
         flush_threshold_ *= 2;
 
-      last_flush_tp_ = clk::now();
+      last_flush_tp_ = clock_now();
     }
   }
 
   double flush_interval_sec() const {
-    return std::chrono::duration<double>(clk::now() - last_flush_tp_).count();
+    return std::chrono::duration<double>(
+      clk::now() - last_flush_tp_).count();
   }
 
-  /* internal state */
+  // Indices
   DynamicPGM<KeyType, SearchClass, pgm_error> dpgm_{{}};
   Lipp<KeyType>                              lipp_{{}};
 
-  /* staging buffer & thread sync */
+  // Staging buffer & sync
   std::vector<KeyValue<KeyType>> buffer_;
   mutable std::mutex             buffer_mtx_;
   mutable std::shared_mutex      lipp_mtx_;
@@ -347,11 +344,12 @@ private:
   std::thread                    worker_;
   std::atomic<bool>              stop_{false};
 
-  /* adaptive‑flush metrics */
-  // std::atomic<uint64_t> lookup_lat_ns_{0}, lookup_cnt_{0}, insert_cnt_{0};
-  mutable std::atomic<uint64_t> lookup_lat_ns_{0}, lookup_cnt_{0}, insert_cnt_{0};
-  double  avg_lookup_lat_ns_ = 0.0;
-  double  avg_insert_mops_   = 0.0;
-  size_t  flush_threshold_;           // live parameter
-  clk::time_point last_flush_tp_ = clock_now();
+  // Adaptive‐flush metrics
+  mutable std::atomic<uint64_t> lookup_lat_ns_{0},
+                                 lookup_cnt_{0},
+                                 insert_cnt_{0};
+  double avg_lookup_lat_ns_ = 0.0;
+  double avg_insert_mops_   = 0.0;
+  size_t flush_threshold_;
+  clk::time_point last_flush_tp_;
 };
