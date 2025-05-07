@@ -200,46 +200,50 @@
 template <class KeyType, class SearchClass, size_t pgm_error>
 class HybridPGMLippAsync : public Competitor<KeyType, SearchClass> {
 public:
-  // ctor: params[0] = starting flush threshold (optional)
+  // ctor: params[0] = initial flush threshold (optional)
   explicit HybridPGMLippAsync(const std::vector<int>& params)
-    : flush_threshold_( params.empty() ? 100'000 : size_t(params[0]) )
+    : flush_threshold_( params.empty() ? 100000 : size_t(params[0]) )
   {
     worker_ = std::thread(&HybridPGMLippAsync::flush_worker, this);
   }
 
+  // note: base destructor is non-virtual, so we must not mark override here
   ~HybridPGMLippAsync() {
-    { std::lock_guard<std::mutex> lk(buffer_mtx_); stop_ = true; }
+    {
+      std::lock_guard<std::mutex> lk(buffer_mtx_);
+      stop_ = true;
+    }
     cv_.notify_one();
     if (worker_.joinable()) worker_.join();
   }
 
-  // build both indices on the initial sorted data
+  // build both indices on the initial data
   uint64_t Build(const std::vector<KeyValue<KeyType>>& data,
-                 size_t num_threads) override
+                 size_t num_threads)
   {
     uint64_t t1 = dpgm_.Build(data, num_threads);
     uint64_t t2 = lipp_.Build(data, num_threads);
     return t1 + t2;
   }
 
-  // point‐lookup: try DPGM then fall back to LIPP
+  // lookup: first DPGM, then LIPP
   size_t EqualityLookup(const KeyType& key,
-                        uint32_t thread_id) const override
+                        uint32_t thread_id) const
   {
     auto t0 = clock_now();
     size_t res = dpgm_.EqualityLookup(key, thread_id);
     if (res == util::OVERFLOW)
       res = lipp_.EqualityLookup(key, thread_id);
-
     auto ns = since_ns(t0);
+
     lookup_lat_ns_.fetch_add(ns, std::memory_order_relaxed);
     lookup_cnt_.fetch_add(1,   std::memory_order_relaxed);
     return res;
   }
 
-  // insert to DPGM + buffer for async flush into LIPP
+  // insert to DPGM + buffer for async flush
   void Insert(const KeyValue<KeyType>& kv,
-              uint32_t thread_id) override
+              uint32_t thread_id)
   {
     dpgm_.Insert(kv, thread_id);
     insert_cnt_.fetch_add(1, std::memory_order_relaxed);
@@ -252,18 +256,17 @@ public:
       cv_.notify_one();
   }
 
-  std::string name() const override { return "HybridPGM"; }
-  std::size_t size() const override {
-    return dpgm_.size() + lipp_.size();
-  }
+  // metadata for harness
+  std::string name() const              { return "HybridPGM"; }
+  std::size_t size() const              { return dpgm_.size() + lipp_.size(); }
   bool applicable(bool, bool, bool, bool multithread,
-                  const std::string&) const override
+                  const std::string&) const
   {
     return !multithread;
   }
 
 private:
-  // high-resolution clock helpers
+  // clock helpers
   using clk = std::chrono::steady_clock;
   static inline clk::time_point clock_now() {
     return clk::now();
@@ -273,13 +276,15 @@ private:
              clk::now() - t0).count();
   }
 
+  // background flush + adaptive logic
   void flush_worker() {
     std::vector<KeyValue<KeyType>> local;
     constexpr double alpha = 0.1;
-    const uint64_t target_lookup_ns = 800;   // adjust to your hardware
-    const double   target_insert_mops = 2.0; // 2 Mops/sec
+    const uint64_t target_lookup_ns = 800;   // tune for your machine
+    const double   target_insert_mops = 2.0; // tune for your workload
 
     while (true) {
+      // wait for buffer or stop
       {
         std::unique_lock<std::mutex> lk(buffer_mtx_);
         cv_.wait_for(lk, std::chrono::milliseconds(10),
@@ -288,7 +293,7 @@ private:
         buffer_.swap(local);
       }
 
-      // bulk‐insert into LIPP
+      // flush into LIPP
       {
         std::unique_lock<std::shared_mutex> lk2(lipp_mtx_);
         for (auto &kv: local)
@@ -296,7 +301,7 @@ private:
       }
       local.clear();
 
-      // --- adapt flush_threshold_ every time we flush ---
+      // adapt flush_threshold_
       auto lkp_cnt = lookup_cnt_.exchange(0, std::memory_order_relaxed);
       auto lkp_ns  = lookup_lat_ns_.exchange(0, std::memory_order_relaxed);
       auto ins_cnt = insert_cnt_.exchange(0, std::memory_order_relaxed);
@@ -307,9 +312,9 @@ private:
       avg_lookup_lat_ns_ = alpha*now_lat + (1-alpha)*avg_lookup_lat_ns_;
       avg_insert_mops_   = alpha*now_ins + (1-alpha)*avg_insert_mops_;
 
-      if (avg_lookup_lat_ns_ > target_lookup_ns && flush_threshold_ > 10'000)
+      if (avg_lookup_lat_ns_ > target_lookup_ns && flush_threshold_ > 10000)
         flush_threshold_ /= 2;
-      else if (avg_insert_mops_ > target_insert_mops && flush_threshold_ < 2'000'000)
+      else if (avg_insert_mops_ > target_insert_mops && flush_threshold_ < 2000000)
         flush_threshold_ *= 2;
 
       last_flush_tp_ = clk::now();
@@ -320,11 +325,11 @@ private:
     return std::chrono::duration<double>(clk::now() - last_flush_tp_).count();
   }
 
-  // --- data members ---
+  // indices
   DynamicPGM<KeyType,SearchClass,pgm_error> dpgm_{{}};
   Lipp<KeyType>                            lipp_{{}};
 
-  // staging buffer + sync
+  // staging buffer & sync
   std::vector<KeyValue<KeyType>> buffer_;
   mutable std::mutex           buffer_mtx_;
   mutable std::shared_mutex    lipp_mtx_;
