@@ -285,7 +285,7 @@ private:
   // background flush thread: also updates flush_threshold_
   void flush_worker() {
     std::vector<KeyValue<KeyType>> to_flush;
-    constexpr double α = 0.1;
+    constexpr double alpha = 0.1;
     const uint64_t target_lkp_ns   = 800;   // target <0.8 µs per lookup
     const double   target_ins_mops = 2.0;   // target >2 M inserts/s
 
@@ -316,8 +316,8 @@ private:
       double now_lat = lkp_n  ? double(lkp_ns)/lkp_n : 0.0;
       double now_ins = (ins_n/1e6)/flush_interval();
 
-      avg_lkp_ns_ = α*now_lat     + (1-α)*avg_lkp_ns_;
-      avg_ins_m_  = α*now_ins     + (1-α)*avg_ins_m_;
+      avg_lkp_ns_ = alpha*now_lat     + (1-alpha)*avg_lkp_ns_;
+      avg_ins_m_  = alpha*now_ins     + (1-alpha)*avg_ins_m_;
 
       // adjust
       if (avg_lkp_ns_ > target_lkp_ns && flush_threshold_ > 10000) {
